@@ -6,6 +6,7 @@ from matplotlib import animation
 import math
 import random
 import time
+import sys
 
 
 def RotY(deg):
@@ -314,25 +315,42 @@ class SigmaPoints:
 
     def __init__(self, W_type, lmbda=None):
         self.W_type = W_type
-        if self.W_type == 2 and lmbda == None:
-            raise ValueError("lambda must be defined")
-        self.alpha = 0.9
+        #if self.W_type == 2 and lmbda == None:
+        #    raise ValueError("lambda must be defined")
+        self.alpha = 0.3
         self.k = 1
         self.beta = 2
         self.n = 13
         self.lmbda = (self.alpha**2) * (self.n + self.k) - self.n
+        self.counter = 0
         pass
 
     def compute_W(self, M):
+        self.counter +=1
         # compute W points from a matrix M
         if M.shape[0] != M.shape[1] or M.shape[0] != 12:
             raise ValueError("M must be a 12x12 square matrix")
         n = M.shape[0]
+
         if self.W_type == 1:
-            S = cholesky(2 * n * M)
+            M = (n + self.lmbda) * M
+            if np.linalg.det(M) < 0.0:
+                d, v = np.linalg.eig(M)
+                for i in range(d.shape[0]):
+                    if d[i] < 0.0:
+                        d[i] = 0.000001
+                M = v.dot(np.diag(d)).dot(v.T)
+            S = cholesky(M)
             W = S.dot(S.T)
         elif self.W_type == 2:
-            S = cholesky((n + self.lmbda) * M)
+            M = (n + self.lmbda) * M
+            if np.linalg.det(M) < 0.0:
+                d, v = np.linalg.eig(M)
+                for i in range(d.shape[0]):
+                    if d[i] < 0.0:
+                        d[i] = 0.000001
+                M = v.dot(np.diag(d)).dot(v.T)
+            S = cholesky(M)
             W = S.dot(S.T)
         return np.hstack((W, -W))
 
@@ -353,7 +371,7 @@ class UKF_tracker:
     # https://pdfs.semanticscholar.org/3085/aa4779c04898685c1b2d50cdafa98b132d3f.pdf
     def __init__(self, process_noise, measurement_noise, dt):
 
-        self.alpha = 0.9
+        self.alpha = 0.3
         self.k = 1
         self.beta = 2
         self.n = 13
@@ -363,27 +381,23 @@ class UKF_tracker:
 
         Qq = np.eye(3) * (self.dt ** 4 / 4)  # variance in quaternion represented as rotation vector
         Qw = np.eye(3) * (self.dt ** 4 / 4)  # variance in angular speed
-        Qqw = np.eye(3) * (
-                    self.dt ** 4 / 4)  # covariance between quaternion and angular velocity. only pair dimensions have non-zero value
-        Qwq = np.eye(3) * (
-                    self.dt ** 4 / 4)  # covariance between angular vel and quaternion. only pair dimensions have non-zero value
+        Qqw = np.eye(3) * (self.dt ** 4 / 4)  # covariance between quaternion and angular velocity. only pair dimensions have non-zero value
+        Qwq = np.eye(3) * (self.dt ** 4 / 4)  # covariance between angular vel and quaternion. only pair dimensions have non-zero value
 
         Qp = np.eye(3) * (self.dt ** 4 / 4)  # variance in position
         Qv = np.eye(3) * (self.dt ** 4 / 4)  # variance in velocity
-        Qpv = np.eye(3) * (
-                    self.dt ** 4 / 4)  # covariance between position and velocity. only pair dimensions have non-zero value
-        Qvp = np.eye(3) * (
-                    self.dt ** 4 / 4)  # covariance between velocity and position. only pair dimensions have non-zero value
+        Qpv = np.eye(3) * (self.dt ** 4 / 4)  # covariance between position and velocity. only pair dimensions have non-zero value
+        Qvp = np.eye(3) * (self.dt ** 4 / 4)  # covariance between velocity and position. only pair dimensions have non-zero value
 
         self.Q = np.zeros((12, 12), np.float32)
         self.Q[0:3, 0:3] = Qq
-        self.Q[3:6, 3:6] = Qw * 0.1
+        self.Q[3:6, 3:6] = Qw
         self.Q[6:9, 6:9] = Qp
-        self.Q[9:12, 9:12] = Qv * 0.1
-        self.Q[0:3, 3:6] = Qqw * 0.1
-        self.Q[3:6, 0:3] = Qwq * 0.1  # same as Pqwk
-        self.Q[6:9, 9:12] = Qpv * 0.1
-        self.Q[9:12, 6:9] = Qvp * 0.1  # same as Ppvk
+        self.Q[9:12, 9:12] = Qv
+        #self.Q[0:3, 3:6] = Qqw * 0.1
+        #self.Q[3:6, 0:3] = Qwq * 0.1  # same as Pqwk
+        #self.Q[6:9, 9:12] = Qpv * 0.1
+        #self.Q[9:12, 6:9] = Qvp * 0.1  # same as Ppvk
 
         self.Q *= process_noise
         self.Pk = self.Q
@@ -428,17 +442,17 @@ class UKF_tracker:
         n2 = qxi.shape[1]
         e_prev = np.ones((3, 1))
 
-        weights = np.zeros(n2,np.float32)
-        weights[-1] = self.lmbda/(self.n +self.lmbda)
-        weights[:-1] = 1/(2*(self.n + self.lmbda))
+        # weights = np.zeros(n2,np.float32)
+        # weights[-1] = self.lmbda/(self.n +self.lmbda)
+        # weights[:-1] = 1/(2*(self.n + self.lmbda))
         for i in range(10):
             ei = np.zeros((3, n2))
             for i in range(n2):
                 eq = quaternion.as_quat_array(qxi[:, i]) * qt.inverse()
                 ei[:, i] = q2r(eq)
-            #e = np.mean(ei, axis=1)
-            e = ei * weights
-            e = np.sum(e, axis=1)
+            e = np.mean(ei, axis=1)
+            # e = ei * weights
+            # e = np.sum(e, axis=1)
 
             qt = r2q(e) * qt
             if norm(e - e_prev) < 0.01:
@@ -452,12 +466,13 @@ class UKF_tracker:
     def unscented_mean_predict_step(self, xk, X):
         q_avg, q_ei = self.quaternion_mean(xk[:X_QUAT_END, 0], X[:X_QUAT_END, :])
 
-        weights = np.zeros(25, np.float32)
-        weights[-1] = self.lmbda / (self.n + self.lmbda)
-        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        # weights = np.zeros(25, np.float32)
+        # weights[-1] = self.lmbda / (self.n + self.lmbda)
+        # weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        # wpv_avg = np.sum(X[X_ANG_VEL_START:, :] * weights, axis=1, keepdims=True)
+        # weights do not sum up to one. this is why the average does not represent the actual average
 
-        #wpv_avg = np.mean(X[X_ANG_VEL_START:, :], axis=1, keepdims=True)
-        wpv_avg = np.sum(X[X_ANG_VEL_START:, :] * weights, axis=1, keepdims=True)
+        wpv_avg = np.mean(X[X_ANG_VEL_START:, :], axis=1, keepdims=True)
         wpv_ei = X[X_ANG_VEL_START:, :] - wpv_avg
 
         x_avg = np.vstack((q_avg, wpv_avg))
@@ -473,14 +488,16 @@ class UKF_tracker:
         if Q != None:
             return x_ei.dot(x_ei.T) / n2 + Q
         else:
-            weights = np.zeros(25, np.float32)
-            weights[-1] = self.lmbda / (self.n + self.lmbda) + 1 - self.alpha**2 + self.beta
-            weights[:-1] = 1 / (2 * (self.n + self.lmbda))
-            cov = np.zeros((12,12), np.float32)
-            for i in range(x_ei.shape[1]):
-                cov += weights[i] * x_ei[:,[i]].dot(x_ei[:,[i]].T)
-            return cov
-            #return x_ei.dot(x_ei.T) / n2
+            # weights = np.zeros(25, np.float32)
+            # weights[-1] = self.lmbda / (self.n + self.lmbda) #+ 1 - self.alpha**2 + self.beta
+            # weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+            # cov = np.zeros((12,12), np.float32)
+            # for i in range(x_ei.shape[1]):
+            #     cov += weights[i] * x_ei[:,[i]].dot(x_ei[:,[i]].T)
+            # return cov
+            # weights do not sum up to one. this is why they do not represent the actual average
+
+            return x_ei.dot(x_ei.T) / n2
 
     def predict(self):
         W = self.X_generator.compute_W(M=self.Pk + self.Q)
@@ -491,6 +508,9 @@ class UKF_tracker:
             Y[:, [i]] = self.fx(X[:, [i]])
         x_, x_ei = self.unscented_mean_predict_step(self.xk, Y)
         P_ = self.unscented_cov_predict_step(x_ei, Q=None)  # should try with P_ = self.unscented_cov(ei, Q=self.Q)
+        P_ = (np.abs(P_) + np.abs(P_.T)) / 2.0
+        zero_indexes = P_ < 0.000001
+        P_[zero_indexes] = 0
         return x_, P_, Y, x_ei  # this is noted in paper as W_i^'
 
     def unscented_mean_update_step(self, Z):
@@ -505,12 +525,13 @@ class UKF_tracker:
         q_u = np.array([1, 0, 0, 0])
         q_avg, q_ei = self.quaternion_mean(q_u, Z[:Z_QUAT_END, :])
 
-        weights = np.zeros(25, np.float32)
-        weights[-1] = self.lmbda / (self.n + self.lmbda)
-        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        # weights = np.zeros(25, np.float32)
+        # weights[-1] = self.lmbda / (self.n + self.lmbda)
+        # weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        # p_avg = np.sum(Z[Z_POS_START:, :] * weights, axis=1, keepdims=True)
+        #weights do not sum up to 1. thus this is why hx_avg will not represent the actual average
 
-        p_avg = np.sum(Z[Z_POS_START:, :] * weights, axis=1, keepdims=True)
-        #p_avg = np.mean(Z[Z_POS_START:, :], axis=1, keepdims=True)
+        p_avg = np.mean(Z[Z_POS_START:, :], axis=1, keepdims=True)
         p_ei = Z[Z_POS_START:, :] - p_avg
 
         hx_avg = np.vstack((q_avg, p_avg))
@@ -521,15 +542,23 @@ class UKF_tracker:
     def unscented_cov_update_step(self, h_ei, R):
         n2 = h_ei.shape[1]
 
-        weights = np.zeros(25, np.float32)
-        weights[-1] = self.lmbda / (self.n + self.lmbda) + 1 - self.alpha ** 2 + self.beta
-        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
-        cov = np.zeros((6, 6), np.float32)
-        for i in range(x_ei.shape[1]):
-            cov += weights[i] * h_ei[:,[i]].dot(h_ei[:,[i]].T)
-        return cov
+        # weights = np.zeros(25, np.float32)
+        # weights[-1] = self.lmbda / (self.n + self.lmbda) #+ 1 - self.alpha ** 2 + self.beta
+        # weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        # cov = np.zeros((6, 6), np.float32)
+        # for i in range(x_ei.shape[1]):
+        #     cov += weights[i] * h_ei[:,[i]].dot(h_ei[:,[i]].T)
+        # cov = (np.abs(cov) + np.abs(cov.T)) / 2.0
+        # zero_indexes = cov < 0.000001
+        # cov[zero_indexes] = 0
+        # return cov
+        #weights do not sum up to one. this is why the average will not represent the actual average
 
-        #return h_ei.dot(h_ei.T) / n2 + R
+        cov = h_ei.dot(h_ei.T) / n2 + R
+        cov = (np.abs(cov) + np.abs(cov.T)) / 2.0
+        zero_indexes = cov < 0.000001
+        cov[zero_indexes] = 0
+        return cov
 
     def measurement_difference(self, z, hx):
         # q2 - q1 = qd #but actually use the proper operators
@@ -542,7 +571,7 @@ class UKF_tracker:
         qd = quaternion.as_float_array(qd).reshape(-1, 1)
 
         p_z = z[Z_POS_START:, [0]]
-        p_hx = z[Z_POS_START:, [0]]
+        p_hx = hx[Z_POS_START:, [0]]
         pd = p_z - p_hx
 
         y = np.vstack((qd, pd))
@@ -586,14 +615,17 @@ class UKF_tracker:
 
         ############################################
         ##############   Pxz   #####################
-        #n2 = h_ei.shape[1]
-        #Pxz = x_ei.dot(h_ei.T) / n2
-        weights = np.zeros(25, np.float32)
-        weights[-1] = self.lmbda / (self.n + self.lmbda) + 1 - self.alpha ** 2 + self.beta
-        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
-        Pxz = np.zeros((12, 6), np.float32)
-        for i in range(x_ei.shape[1]):
-            Pxz += weights[i] * x_ei[:,[i]].dot(h_ei[:,[i]].T)
+        n2 = h_ei.shape[1]
+        Pxz = x_ei.dot(h_ei.T) / n2
+        # weights do not sum up to one.
+        # weights = np.zeros(25, np.float32)
+        # weights[-1] = self.lmbda / (self.n + self.lmbda) #+ 1 - self.alpha ** 2 + self.beta
+        # weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        # Pxz = np.zeros((12, 6), np.float32)
+        # for i in range(x_ei.shape[1]):
+        #     Pxz += weights[i] * x_ei[:,[i]].dot(h_ei[:,[i]].T)
+        zero_indexes = Pxz < 0.0000001
+        Pxz[zero_indexes] = 0
         ###########################################
         K = Pxz.dot(inv(Pz))
 
@@ -605,6 +637,9 @@ class UKF_tracker:
 
         ###### ensure positive definite
         self.Pk = (np.abs(self.Pk) + np.abs(self.Pk.T))/2.0
+        zero_indexes = self.Pk < 0.000001
+        self.Pk[zero_indexes] = 0
+
         pass
 
     # https://forum.unity.com/threads/trivia-q-the-w-in-a-quaternion.2039/
@@ -637,7 +672,9 @@ for i in range(len(gt_rot_quat)):
 
         est_pos.append(P_est)
         est_rot.append(R_est)
-    except:
+    except ValueError:
+        print "error"
+        print sys.exc_info()[0]
         break
 print est_pos
 animate_moevement.DO_CLEAR_FIGURE = False
