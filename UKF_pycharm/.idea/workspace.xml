@@ -32,12 +32,12 @@
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="py" value="1816" />
+          <entry key="py" value="2753" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
-          <entry key="Python" value="1816" />
+          <entry key="Python" value="2753" />
         </counts>
       </usages-collector>
     </session>
@@ -47,8 +47,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/UKF.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-3792">
-              <caret line="414" lean-forward="true" selection-start-line="414" selection-end-line="414" />
+            <state relative-caret-position="341">
+              <caret line="111" column="23" lean-forward="true" selection-start-line="111" selection-start-column="23" selection-end-line="111" selection-end-column="23" />
               <folding>
                 <element signature="e#0#18#0" expanded="true" />
               </folding>
@@ -79,7 +79,6 @@
       <find>gt_rot_quat</find>
       <find>compute_X</find>
       <find>unscented_mean_update_step</find>
-      <find>quaternion_mean</find>
       <find>unscented_cov_update_step</find>
       <find>unscented_cov_predict_step</find>
       <find>unscented_mean_predict_step</find>
@@ -91,6 +90,12 @@
       <find>weights[-1] = self.lmbda / (self.n + self.lmbda)</find>
       <find>weights</find>
       <find>SigmaPoints</find>
+      <find>measurement_noise</find>
+      <find>UKF_tracker</find>
+      <find>0.0000</find>
+      <find>quaternion_mean</find>
+      <find>q2ro</find>
+      <find>rot2quat</find>
     </findStrings>
   </component>
   <component name="Git.Settings">
@@ -194,8 +199,8 @@
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
       <window_info anchor="bottom" id="Find" order="1" />
-      <window_info anchor="bottom" id="Run" order="2" weight="0.329718" />
-      <window_info active="true" anchor="bottom" id="Debug" order="3" visible="true" weight="0.3991323" />
+      <window_info active="true" anchor="bottom" id="Run" order="2" visible="true" weight="0.329718" />
+      <window_info anchor="bottom" id="Debug" order="3" weight="0.3991323" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
       <window_info anchor="bottom" id="TODO" order="6" />
@@ -216,10 +221,14 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <condition expression="self.counter ==10" language="Python" />
           <url>file://$PROJECT_DIR$/UKF.py</url>
-          <line>345</line>
-          <option name="timeStamp" value="17" />
+          <line>147</line>
+          <option name="timeStamp" value="96" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/UKF.py</url>
+          <line>696</line>
+          <option name="timeStamp" value="99" />
         </line-breakpoint>
       </breakpoints>
       <breakpoints-dialog>
@@ -228,10 +237,10 @@
     </breakpoint-manager>
     <watches-manager>
       <configuration name="PythonConfigurationType">
-        <watch expression="self.Pk" />
-        <watch expression="self.counter" language="Python" />
-        <watch expression="Ky" />
-        <watch expression="K" />
+        <watch expression="z" />
+        <watch expression="self.xk" language="Python" />
+        <watch expression="R_est" />
+        <watch expression="R" />
       </configuration>
     </watches-manager>
   </component>
@@ -245,12 +254,22 @@
     </expressions>
     <expressions id="watch">
       <expression>
+        <expression-string>self.xk</expression-string>
+        <language-id>Python</language-id>
+        <evaluation-mode>EXPRESSION</evaluation-mode>
+      </expression>
+      <expression>
         <expression-string>self.counter</expression-string>
         <language-id>Python</language-id>
         <evaluation-mode>EXPRESSION</evaluation-mode>
       </expression>
     </expressions>
     <expressions id="evaluateExpression">
+      <expression>
+        <expression-string>np.linalg.det(M)</expression-string>
+        <language-id>Python</language-id>
+        <evaluation-mode>EXPRESSION</evaluation-mode>
+      </expression>
       <expression>
         <expression-string>inv(Pz)</expression-string>
         <language-id>Python</language-id>
@@ -268,11 +287,6 @@
       </expression>
       <expression>
         <expression-string>np.linalg.det(M) &lt; 0.0</expression-string>
-        <language-id>Python</language-id>
-        <evaluation-mode>EXPRESSION</evaluation-mode>
-      </expression>
-      <expression>
-        <expression-string>np.linalg.det(M)</expression-string>
         <language-id>Python</language-id>
         <evaluation-mode>EXPRESSION</evaluation-mode>
       </expression>
@@ -308,8 +322,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/UKF.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-3792">
-          <caret line="414" lean-forward="true" selection-start-line="414" selection-end-line="414" />
+        <state relative-caret-position="341">
+          <caret line="111" column="23" lean-forward="true" selection-start-line="111" selection-start-column="23" selection-end-line="111" selection-end-column="23" />
           <folding>
             <element signature="e#0#18#0" expanded="true" />
           </folding>

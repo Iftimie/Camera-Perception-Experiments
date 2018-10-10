@@ -27,12 +27,45 @@ def RotX(deg):
                      [0, sin(deg), cos(deg)]])
 
 
+
 def rot2quat(R):
     qw = math.sqrt(1 + R[0, 0] + R[1, 1] + R[2, 2]) / 2.0
     qx = (R[2, 1] - R[1, 2]) / (4 * qw)
     qy = (R[0, 2] - R[2, 0]) / (4 * qw)
     qz = (R[1, 0] - R[0, 1]) / (4 * qw)
     return np.array([[qw, qx, qy, qz]]).T
+
+def q2rot(q):
+    qw = q[0]
+    qx = q[1]
+    qy = q[2]
+    qz = q[3]
+    R = np.zeros((3, 3), np.float32)
+    R[0, 0] = 1 - 2 * (qy ** 2) - 2 * (qz ** 2)
+    R[0, 1] = 2 * qx * qy - 2 * qz * qw
+    R[0, 2] = 2 * qx * qz + 2 * qy * qw
+    R[1, 0] = 2 * qx * qy + 2 * qz * qw
+    R[1, 1] = 1 - 2 * (qx ** 2) - 2 * (qz ** 2)
+    R[1, 2] = 2 * qy * qz - 2 * qx * qw
+    R[2, 0] = 2 * qx * qz - 2 * qy * qw
+    R[2, 1] = 2 * qy * qz + 2 * qx * qw
+    R[2, 2] = 1 - 2 * (qx ** 2) - 2 * (qy ** 2)
+
+    # q0 = q[0]
+    # q1 = q[1]
+    # q2 = q[2]
+    # q3 = q[3]
+    # R[0,0] = q0**2 + q1**2 - q2**2 - q3**2
+    # R[0,1] = 2.0*(q1*q2 - q0*q3)
+    # R[0,2] = 2.0*(q1*q3 + q0*q2)
+    # R[1,0] = 2.0*(q1*q2 + q0*q3)
+    # R[1,1] = q0**2 - q1**2 + q2**2 - q3**2
+    # R[1,2] = 2.0*(q2*q3 - q0*q1)
+    # R[2,0] = 2.0*(q1*q3 - q0*q2)
+    # R[2,1] = 2.0*(q2*q3 + q0*q1)
+    # R[2,2] = q0**2 - q1**2 - q2**2 + q3**2
+    return R
+
 
 
 def create_simulated_data():
@@ -74,7 +107,7 @@ def create_simulated_data():
     # For fast compuation I should also do this analytically
 
     for i in range(len(gt_rot_euler)):
-        rx, ry, rz = gt_rot_euler[i][0, 0], gt_rot_euler[i][1, 0], gt_rot_euler[i][2, 0]
+        rx, ry, rz = radians(gt_rot_euler[i][0, 0]), radians(gt_rot_euler[i][1, 0]), radians(gt_rot_euler[i][2, 0])
         R = RotY(ry).dot(RotX(rx)).dot(RotZ(rz))
         q = rot2quat(R)
         gt_rot_quat.append(q)
@@ -254,7 +287,7 @@ def r2q(r, dt=1.0):
     if r.shape[0] != 3:
         raise ValueError("in r2q r must have shape (3,) or (3,1)")
     a = norm(r) * dt
-    e = r / norm(r) if norm(r) > 0.00001 else r
+    e = r / norm(r) if norm(r) > 0.000000000001 else r
     e_ = e * sin(a / 2.0)
     a_ = cos(a / 2.0)
 
@@ -273,27 +306,9 @@ def q2r(q, dt=1.0):
     r_norm = a / dt
 
     e_ = np.array([q[1], q[2], q[3]])
-    e = e_ / sin(theta) if sin(theta) > 0.00001 else e_
+    e = e_ / sin(theta) if sin(theta) > 0.00000000001 else e_
     r = e * r_norm
     return r
-
-
-def q2rot(q):
-    qw = q[0]
-    qx = q[1]
-    qy = q[2]
-    qz = q[3]
-    R = np.zeros((3, 3), np.float32)
-    R[0, 0] = 1 - 2 * (qy ** 2) - 2 * (qz ** 2)
-    R[0, 1] = 2 * qx * qy - 2 * qz * qw
-    R[0, 2] = 2 * qx * qz + 2 * qy * qw
-    R[1, 0] = 2 * qx * qy + 2 * qz * qw
-    R[1, 1] = 1 - 2 * (qx ** 2) - 2 * (qz ** 2)
-    R[1, 2] = 2 * qy * qz - 2 * qx * qw
-    R[2, 0] = 2 * qx * qz - 2 * qy * qw
-    R[2, 1] = 2 * qy * qz + 2 * qx * qw
-    R[2, 2] = 1 - 2 * (qx ** 2) - 2 * (qy ** 2)
-    return R
 
 
 STATE_SHAPE = 13
@@ -333,12 +348,12 @@ class SigmaPoints:
         n = M.shape[0]
 
         if self.W_type == 1:
-            M = (n + self.lmbda) * M
+            M = M #(2* n) * M
             if np.linalg.det(M) < 0.0:
                 d, v = np.linalg.eig(M)
                 for i in range(d.shape[0]):
                     if d[i] < 0.0:
-                        d[i] = 0.000001
+                        d[i] = 0.000000000001
                 M = v.dot(np.diag(d)).dot(v.T)
             S = cholesky(M)
             W = S.dot(S.T)
@@ -348,7 +363,7 @@ class SigmaPoints:
                 d, v = np.linalg.eig(M)
                 for i in range(d.shape[0]):
                     if d[i] < 0.0:
-                        d[i] = 0.000001
+                        d[i] = 0.00000000001
                 M = v.dot(np.diag(d)).dot(v.T)
             S = cholesky(M)
             W = S.dot(S.T)
@@ -379,25 +394,27 @@ class UKF_tracker:
 
         self.dt = dt
 
-        Qq = np.eye(3) * (self.dt ** 4 / 4)  # variance in quaternion represented as rotation vector
-        Qw = np.eye(3) * (self.dt ** 4 / 4)  # variance in angular speed
-        Qqw = np.eye(3) * (self.dt ** 4 / 4)  # covariance between quaternion and angular velocity. only pair dimensions have non-zero value
-        Qwq = np.eye(3) * (self.dt ** 4 / 4)  # covariance between angular vel and quaternion. only pair dimensions have non-zero value
+        Qq = np.eye(3) #* (self.dt ** 4 / 4)  # variance in quaternion represented as rotation vector
+        Qw = np.eye(3) #* (self.dt ** 2)  # variance in angular speed
+        Qqw = np.eye(3) #* (self.dt ** 3 / 2)  # covariance between quaternion and angular velocity. only pair dimensions have non-zero value
+        Qwq = np.eye(3) #* (self.dt ** 3 / 2)  # covariance between angular vel and quaternion. only pair dimensions have non-zero value
 
-        Qp = np.eye(3) * (self.dt ** 4 / 4)  # variance in position
-        Qv = np.eye(3) * (self.dt ** 4 / 4)  # variance in velocity
-        Qpv = np.eye(3) * (self.dt ** 4 / 4)  # covariance between position and velocity. only pair dimensions have non-zero value
-        Qvp = np.eye(3) * (self.dt ** 4 / 4)  # covariance between velocity and position. only pair dimensions have non-zero value
+        Qp = np.eye(3) #* (self.dt ** 4 / 4)  # variance in position
+        Qv = np.eye(3) #* (self.dt ** 2)  # variance in velocity
+        Qpv = np.eye(3) #* (self.dt ** 3 / 2)  # covariance between position and velocity. only pair dimensions have non-zero value
+        Qvp = np.eye(3) #* (self.dt ** 3 / 2)  # covariance between velocity and position. only pair dimensions have non-zero value
 
         self.Q = np.zeros((12, 12), np.float32)
         self.Q[0:3, 0:3] = Qq
-        self.Q[3:6, 3:6] = Qw
         self.Q[6:9, 6:9] = Qp
-        self.Q[9:12, 9:12] = Qv
-        #self.Q[0:3, 3:6] = Qqw * 0.1
-        #self.Q[3:6, 0:3] = Qwq * 0.1  # same as Pqwk
-        #self.Q[6:9, 9:12] = Qpv * 0.1
-        #self.Q[9:12, 6:9] = Qvp * 0.1  # same as Ppvk
+
+        self.Q[0:3, 3:6] = Qqw * 0.2
+        self.Q[3:6, 0:3] = Qwq * 0.2  # same as Pqwk
+        self.Q[6:9, 9:12] = Qpv * 0.01
+        self.Q[9:12, 6:9] = Qvp * 0.01  # same as Ppvk
+
+        self.Q[3:6, 3:6] = Qw * 0.4
+        self.Q[9:12, 9:12] = Qv * 0.1
 
         self.Q *= process_noise
         self.Pk = self.Q
@@ -406,8 +423,9 @@ class UKF_tracker:
         Rq = Qq
         Rp = Qp
         self.R = np.zeros((6, 6), np.float32)
-        self.R[0:3, 0:3] = Rq * 0.01
-        self.R[3:6, 3:6] = Rp * 0.01
+        self.R[0:3, 0:3] = Rq * 0.1
+        self.R[3:6, 3:6] = Rp
+        self.R *= measurement_noise
 
         self.xk = array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).T.astype(np.float32)
 
@@ -445,11 +463,11 @@ class UKF_tracker:
         # weights = np.zeros(n2,np.float32)
         # weights[-1] = self.lmbda/(self.n +self.lmbda)
         # weights[:-1] = 1/(2*(self.n + self.lmbda))
-        for i in range(10):
+        for i in range(30):
             ei = np.zeros((3, n2))
-            for i in range(n2):
-                eq = quaternion.as_quat_array(qxi[:, i]) * qt.inverse()
-                ei[:, i] = q2r(eq)
+            for j in range(n2):
+                eq = quaternion.as_quat_array(qxi[:, j]) * qt.inverse()
+                ei[:, j] = q2r(eq)
             e = np.mean(ei, axis=1)
             # e = ei * weights
             # e = np.sum(e, axis=1)
@@ -509,7 +527,7 @@ class UKF_tracker:
         x_, x_ei = self.unscented_mean_predict_step(self.xk, Y)
         P_ = self.unscented_cov_predict_step(x_ei, Q=None)  # should try with P_ = self.unscented_cov(ei, Q=self.Q)
         P_ = (np.abs(P_) + np.abs(P_.T)) / 2.0
-        zero_indexes = P_ < 0.000001
+        zero_indexes = P_ < 0.000000000001
         P_[zero_indexes] = 0
         return x_, P_, Y, x_ei  # this is noted in paper as W_i^'
 
@@ -556,7 +574,7 @@ class UKF_tracker:
 
         cov = h_ei.dot(h_ei.T) / n2 + R
         cov = (np.abs(cov) + np.abs(cov.T)) / 2.0
-        zero_indexes = cov < 0.000001
+        zero_indexes = cov < 0.000000000001
         cov[zero_indexes] = 0
         return cov
 
@@ -568,7 +586,11 @@ class UKF_tracker:
         q2 = q_z
         q1 = q_hx
         qd = q2 * q1.inverse()
+        qd_ = qd
         qd = quaternion.as_float_array(qd).reshape(-1, 1)
+
+        #this x should be equal to q_z
+        x =  qd_ * q_hx
 
         p_z = z[Z_POS_START:, [0]]
         p_hx = hx[Z_POS_START:, [0]]
@@ -594,7 +616,7 @@ class UKF_tracker:
     def state_addition(self, x_, Ky):
         q_x_ = quaternion.as_quat_array(x_[:X_QUAT_END, 0])
         q_Ky = quaternion.as_quat_array(Ky[:X_QUAT_END, 0])
-        q_x = q_x_ * q_Ky
+        q_x = q_Ky * q_x_
         q_x = quaternion.as_float_array(q_x).reshape(-1, 1)
         wpv_x_ = x_[X_ANG_VEL_START:, [0]]
         wpv_Ky = Ky[X_ANG_VEL_START:, [0]]
@@ -624,7 +646,7 @@ class UKF_tracker:
         # Pxz = np.zeros((12, 6), np.float32)
         # for i in range(x_ei.shape[1]):
         #     Pxz += weights[i] * x_ei[:,[i]].dot(h_ei[:,[i]].T)
-        zero_indexes = Pxz < 0.0000001
+        zero_indexes = Pxz < 0.00000000000001
         Pxz[zero_indexes] = 0
         ###########################################
         K = Pxz.dot(inv(Pz))
@@ -637,7 +659,7 @@ class UKF_tracker:
 
         ###### ensure positive definite
         self.Pk = (np.abs(self.Pk) + np.abs(self.Pk.T))/2.0
-        zero_indexes = self.Pk < 0.000001
+        zero_indexes = self.Pk < 0.000000000001
         self.Pk[zero_indexes] = 0
 
         pass
@@ -658,7 +680,7 @@ class UKF_tracker:
 est_pos = []
 est_rot = []
 
-tracker = UKF_tracker(process_noise=0.1, measurement_noise=1.0, dt=1.0)
+tracker = UKF_tracker(process_noise=0.1, measurement_noise=0.0000003, dt=1.0)
 for i in range(len(gt_rot_quat)):
     try:
         z = np.vstack((gt_rot_quat[i], gt_pos[i]))
@@ -666,8 +688,12 @@ for i in range(len(gt_rot_quat)):
         x_, P_, Y, x_ei = tracker.predict()
         tracker.update(z=z, Y=Y, x_ei=x_ei, x_=x_, P_ = P_)
         xk = tracker.xk
+        print np.hstack((xk[:X_QUAT_END],z[:Z_QUAT_END] ))
+        print ""
 
         R_est = q2rot(xk[:X_QUAT_END, 0])
+        print R_est
+        print q2rot(rot2quat(R_est))
         P_est = xk[X_POS_START:X_POS_END, 0]
 
         est_pos.append(P_est)
@@ -676,6 +702,6 @@ for i in range(len(gt_rot_quat)):
         print "error"
         print sys.exc_info()[0]
         break
-print est_pos
+
 animate_moevement.DO_CLEAR_FIGURE = False
 animate_moevement(est_pos, est_rot, gt_rot_is_mat=True)
