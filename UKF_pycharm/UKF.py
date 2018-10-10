@@ -316,8 +316,8 @@ class SigmaPoints:
         self.W_type = W_type
         if self.W_type == 2 and lmbda == None:
             raise ValueError("lambda must be defined")
-        self.alpha = 0.05
-        self.k = 3 - 13
+        self.alpha = 0.9
+        self.k = 1
         self.beta = 2
         self.n = 13
         self.lmbda = (self.alpha**2) * (self.n + self.k) - self.n
@@ -338,19 +338,27 @@ class SigmaPoints:
 
     def compute_X(self, W, x):
         if W.shape[0] != 12 or W.shape[1] != 24:
-            raise ValueError("w must be a 12x24 square matrix")
-        X = np.zeros((STATE_SHAPE, W.shape[1]))
+            raise ValueError("W must be a 12x24 square matrix")
+        X = np.zeros((STATE_SHAPE, W.shape[1] + 1))
         qk_m = quaternion.as_quat_array(x[:X_QUAT_END, 0])
         for j in range(W.shape[1]):
             qxj = qk_m * r2q(W[:COV_QUAT_END, j])
             X[:X_QUAT_END, [j]] = quaternion.as_float_array(qxj).reshape(-1, 1)
-        X[X_ANG_VEL_START:, :] = x[X_ANG_VEL_START:, :] + W[COV_ANG_VEL_START:, :]
+        X[X_ANG_VEL_START:, :-1] = x[X_ANG_VEL_START:, :] + W[COV_ANG_VEL_START:, :]
+        X[:, [-1]] = x
         return X
 
 
 class UKF_tracker:
     # https://pdfs.semanticscholar.org/3085/aa4779c04898685c1b2d50cdafa98b132d3f.pdf
     def __init__(self, process_noise, measurement_noise, dt):
+
+        self.alpha = 0.9
+        self.k = 1
+        self.beta = 2
+        self.n = 13
+        self.lmbda = (self.alpha ** 2) * (self.n + self.k) - self.n
+
         self.dt = dt
 
         Qq = np.eye(3) * (self.dt ** 4 / 4)  # variance in quaternion represented as rotation vector
@@ -368,9 +376,9 @@ class UKF_tracker:
                     self.dt ** 4 / 4)  # covariance between velocity and position. only pair dimensions have non-zero value
 
         self.Q = np.zeros((12, 12), np.float32)
-        self.Q[0:3, 0:3] = Qq * 0.5
+        self.Q[0:3, 0:3] = Qq
         self.Q[3:6, 3:6] = Qw * 0.1
-        self.Q[6:9, 6:9] = Qp * 0.5
+        self.Q[6:9, 6:9] = Qp
         self.Q[9:12, 9:12] = Qv * 0.1
         self.Q[0:3, 3:6] = Qqw * 0.1
         self.Q[3:6, 0:3] = Qwq * 0.1  # same as Pqwk
@@ -384,8 +392,8 @@ class UKF_tracker:
         Rq = Qq
         Rp = Qp
         self.R = np.zeros((6, 6), np.float32)
-        self.R[0:3, 0:3] = Rq
-        self.R[3:6, 3:6] = Rp
+        self.R[0:3, 0:3] = Rq * 0.01
+        self.R[3:6, 3:6] = Rp * 0.01
 
         self.xk = array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).T.astype(np.float32)
 
@@ -420,12 +428,18 @@ class UKF_tracker:
         n2 = qxi.shape[1]
         e_prev = np.ones((3, 1))
 
+        weights = np.zeros(n2,np.float32)
+        weights[-1] = self.lmbda/(self.n +self.lmbda)
+        weights[:-1] = 1/(2*(self.n + self.lmbda))
         for i in range(10):
             ei = np.zeros((3, n2))
             for i in range(n2):
                 eq = quaternion.as_quat_array(qxi[:, i]) * qt.inverse()
                 ei[:, i] = q2r(eq)
-            e = np.mean(ei, axis=1)
+            #e = np.mean(ei, axis=1)
+            e = ei * weights
+            e = np.sum(e, axis=1)
+
             qt = r2q(e) * qt
             if norm(e - e_prev) < 0.01:
                 break
@@ -437,7 +451,13 @@ class UKF_tracker:
 
     def unscented_mean_predict_step(self, xk, X):
         q_avg, q_ei = self.quaternion_mean(xk[:X_QUAT_END, 0], X[:X_QUAT_END, :])
-        wpv_avg = np.mean(X[X_ANG_VEL_START:, :], axis=1, keepdims=True)
+
+        weights = np.zeros(25, np.float32)
+        weights[-1] = self.lmbda / (self.n + self.lmbda)
+        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+
+        #wpv_avg = np.mean(X[X_ANG_VEL_START:, :], axis=1, keepdims=True)
+        wpv_avg = np.sum(X[X_ANG_VEL_START:, :] * weights, axis=1, keepdims=True)
         wpv_ei = X[X_ANG_VEL_START:, :] - wpv_avg
 
         x_avg = np.vstack((q_avg, wpv_avg))
@@ -453,7 +473,14 @@ class UKF_tracker:
         if Q != None:
             return x_ei.dot(x_ei.T) / n2 + Q
         else:
-            return x_ei.dot(x_ei.T) / n2
+            weights = np.zeros(25, np.float32)
+            weights[-1] = self.lmbda / (self.n + self.lmbda) + 1 - self.alpha**2 + self.beta
+            weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+            cov = np.zeros((12,12), np.float32)
+            for i in range(x_ei.shape[1]):
+                cov += weights[i] * x_ei[:,[i]].dot(x_ei[:,[i]].T)
+            return cov
+            #return x_ei.dot(x_ei.T) / n2
 
     def predict(self):
         W = self.X_generator.compute_W(M=self.Pk + self.Q)
@@ -477,7 +504,13 @@ class UKF_tracker:
         # i will initialize with unit quaternion
         q_u = np.array([1, 0, 0, 0])
         q_avg, q_ei = self.quaternion_mean(q_u, Z[:Z_QUAT_END, :])
-        p_avg = np.mean(Z[Z_POS_START:, :], axis=1, keepdims=True)
+
+        weights = np.zeros(25, np.float32)
+        weights[-1] = self.lmbda / (self.n + self.lmbda)
+        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+
+        p_avg = np.sum(Z[Z_POS_START:, :] * weights, axis=1, keepdims=True)
+        #p_avg = np.mean(Z[Z_POS_START:, :], axis=1, keepdims=True)
         p_ei = Z[Z_POS_START:, :] - p_avg
 
         hx_avg = np.vstack((q_avg, p_avg))
@@ -487,7 +520,16 @@ class UKF_tracker:
 
     def unscented_cov_update_step(self, h_ei, R):
         n2 = h_ei.shape[1]
-        return h_ei.dot(h_ei.T) / n2 + R
+
+        weights = np.zeros(25, np.float32)
+        weights[-1] = self.lmbda / (self.n + self.lmbda) + 1 - self.alpha ** 2 + self.beta
+        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        cov = np.zeros((6, 6), np.float32)
+        for i in range(x_ei.shape[1]):
+            cov += weights[i] * h_ei[:,[i]].dot(h_ei[:,[i]].T)
+        return cov
+
+        #return h_ei.dot(h_ei.T) / n2 + R
 
     def measurement_difference(self, z, hx):
         # q2 - q1 = qd #but actually use the proper operators
@@ -534,15 +576,25 @@ class UKF_tracker:
         return x
 
     def update(self, z, Y, x_ei, x_, P_):
-        if z.shape[0] != 7 or Y.shape[0] != 13 or Y.shape[1] != 24 or x_ei.shape[0] != 12 or x_ei.shape[1] != 24:
+        if z.shape[0] != 7 or Y.shape[0] != 13 or Y.shape[1] != 25 or x_ei.shape[0] != 12 or x_ei.shape[1] != 25:
             raise ValueError("z must be (7,) or (7,1). Y must be (13,24)")
         Z = np.zeros((z.shape[0], Y.shape[1]), np.float32)
         for i in range(Y.shape[1]):
             Z[:, [i]] = self.hx(Y[:, [i]])
         hx, h_ei = self.unscented_mean_update_step(Z)
         Pz = self.unscented_cov_update_step(h_ei, self.R)
-        n2 = h_ei.shape[1]
-        Pxz = x_ei.dot(h_ei.T) / n2
+
+        ############################################
+        ##############   Pxz   #####################
+        #n2 = h_ei.shape[1]
+        #Pxz = x_ei.dot(h_ei.T) / n2
+        weights = np.zeros(25, np.float32)
+        weights[-1] = self.lmbda / (self.n + self.lmbda) + 1 - self.alpha ** 2 + self.beta
+        weights[:-1] = 1 / (2 * (self.n + self.lmbda))
+        Pxz = np.zeros((12, 6), np.float32)
+        for i in range(x_ei.shape[1]):
+            Pxz += weights[i] * x_ei[:,[i]].dot(h_ei[:,[i]].T)
+        ###########################################
         K = Pxz.dot(inv(Pz))
 
         y = self.measurement_difference(z, hx)
@@ -550,6 +602,9 @@ class UKF_tracker:
 
         self.xk = self.state_addition(x_, Ky)
         self.Pk = P_ - K.dot(Pz).dot(K.T)
+
+        ###### ensure positive definite
+        self.Pk = (np.abs(self.Pk) + np.abs(self.Pk.T))/2.0
         pass
 
     # https://forum.unity.com/threads/trivia-q-the-w-in-a-quaternion.2039/
@@ -570,17 +625,20 @@ est_rot = []
 
 tracker = UKF_tracker(process_noise=0.1, measurement_noise=1.0, dt=1.0)
 for i in range(len(gt_rot_quat)):
-    z = np.vstack((gt_rot_quat[0], gt_pos[0]))
+    try:
+        z = np.vstack((gt_rot_quat[i], gt_pos[i]))
 
-    x_, P_, Y, x_ei = tracker.predict()
-    tracker.update(z=z, Y=Y, x_ei=x_ei, x_=x_, P_ = P_)
-    xk = tracker.xk
+        x_, P_, Y, x_ei = tracker.predict()
+        tracker.update(z=z, Y=Y, x_ei=x_ei, x_=x_, P_ = P_)
+        xk = tracker.xk
 
-    R_est = q2rot(xk[:X_QUAT_END, 0])
-    P_est = xk[X_POS_START:X_POS_END, 0]
+        R_est = q2rot(xk[:X_QUAT_END, 0])
+        P_est = xk[X_POS_START:X_POS_END, 0]
 
-    est_pos.append(P_est)
-    est_rot.append(R_est)
-
-#animate_moevement.DO_CLEAR_FIGURE = False
-#animate_moevement(est_pos, est_rot, gt_rot_is_mat=True)
+        est_pos.append(P_est)
+        est_rot.append(R_est)
+    except:
+        break
+print est_pos
+animate_moevement.DO_CLEAR_FIGURE = False
+animate_moevement(est_pos, est_rot, gt_rot_is_mat=True)
